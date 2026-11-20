@@ -9,6 +9,7 @@
   <img alt="Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white">
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-green">
   <img alt="Dependencies Pillow only" src="https://img.shields.io/badge/dependencies-Pillow%20only-orange">
+  <a href="https://github.com/ira0529/sightqa/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ira0529/sightqa/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 刷题时最烦的不是不会，而是“看题 → 截图 → 粘贴 → 等回复”这一套动作。这个工具把它们合成一件事：鼠标指哪，答案念哪。
