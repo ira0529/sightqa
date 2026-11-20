@@ -23,8 +23,8 @@ from typing import Any
 from PIL import ImageTk
 
 from . import __version__
-from .capture import Capture, capture_cursor, cursor_position, signature_distance
-from .client import ApiError, VisionClient
+from .capture import Capture, capture_scene, cursor_position, signature_distance
+from .client import ApiError, VisionClient, is_skip_reply
 from .config import (
     DEFAULT_BASE_URL,
     REGION_LABELS,
@@ -39,8 +39,10 @@ from .config import (
 )
 from .hotkey import TOGGLE_RUN, TOGGLE_WINDOW, HotkeyManager
 from .models import EMPTY, OK, TEXT_ONLY, check_model, preset_models
-from .ocr import OcrResult, compose_prompt, ocr_support, recognize
+from .ocr import OcrResult, ocr_support, recognize
 from .pacing import resume_delay
+from .pipeline import EmptyScene
+from .pipeline import answer as answer_scene
 from .speech import Speaker, VoiceInfo, detect_voice
 
 BACKGROUND = "#0e1117"
@@ -192,7 +194,7 @@ class App(tk.Tk):
         self._voice: VoiceInfo | None = None
         self._preview_photo: ImageTk.PhotoImage | None = None
         self._inputs: list[tk.Widget] = []
-        self._stats = {"ok": 0, "skip": 0, "fail": 0, "last": 0.0}
+        self._stats = {"ok": 0, "skip": 0, "fail": 0, "full": 0, "last": 0.0}
         self._stats_text = ""
         self._half = (275, 175)
         self._ocr: tuple[bool, str] | None = None
@@ -595,7 +597,7 @@ class App(tk.Tk):
         )
         self.voice_button.pack(side="left", padx=(self.s(10), 0))
 
-        # 第三行：隐藏窗口 / OCR
+        # 第三行：隐藏窗口 / OCR / 整屏补全
         option_row = tk.Frame(body, bg=SURFACE)
         option_row.grid(row=2, column=0, columnspan=4, sticky="w", pady=(self.s(10), 0))
         self.var_hide = tk.BooleanVar(value=False)
@@ -611,13 +613,23 @@ class App(tk.Tk):
         self.var_ocr = tk.BooleanVar(value=False)
         self.ocr_check = Toggle(
             option_row,
-            "图片转文字（OCR）后再答题",
+            "图片转文字（OCR）",
             self.var_ocr,
             font=self._font(10),
             scale=self._scale,
             command=self._refresh_model_hint,
         )
-        self.ocr_check.pack(side="left", padx=(self.s(22), 0))
+        self.ocr_check.pack(side="left", padx=(self.s(20), 0))
+
+        self.var_full = tk.BooleanVar(value=True)
+        self.full_check = Toggle(
+            option_row,
+            "题干截断时补发整屏",
+            self.var_full,
+            font=self._font(10),
+            scale=self._scale,
+        )
+        self.full_check.pack(side="left", padx=(self.s(20), 0))
 
         self.var_ocr_hint = tk.StringVar()
         self.ocr_hint = tk.Label(
@@ -641,6 +653,7 @@ class App(tk.Tk):
                 self.voice_button,
                 self.hide_check,
                 self.ocr_check,
+                self.full_check,
             ]
         )
 
@@ -787,6 +800,7 @@ class App(tk.Tk):
         self.var_rate.set(str(settings.speak_rate))
         self.var_hide.set(settings.hide_window)
         self.var_ocr.set(settings.ocr_mode)
+        self.var_full.set(settings.auto_full)
         self.var_remember.set(settings.remember_key)
         self.var_api_key.set(settings.api_key or api_key_from_env())
         self._refresh_model_hint()
@@ -814,9 +828,12 @@ class App(tk.Tk):
 
     def _update_stats(self) -> None:
         last = self._stats["last"]
+        full = int(self._stats.get("full", 0))
         tail = f" · 上次 {last:.1f}s" if last else ""
+        extra = f" · 整屏 {full}" if full else ""
         text = (
-            f"成功 {self._stats['ok']} · 跳过 {self._stats['skip']} · 失败 {self._stats['fail']}{tail}"
+            f"成功 {self._stats['ok']} · 跳过 {self._stats['skip']} · 失败 {self._stats['fail']}"
+            f"{extra}{tail}"
         )
         if text != self._stats_text:
             self._stats_text = text
@@ -877,6 +894,7 @@ class App(tk.Tk):
             speak_rate=rate,
             hide_window=bool(self.var_hide.get()),
             ocr_mode=ocr_mode,
+            auto_full=bool(self.var_full.get()),
             remember_key=bool(self.var_remember.get()),
             api_key=self.var_api_key.get().strip(),
         ).with_defaults()
@@ -971,7 +989,7 @@ class App(tk.Tk):
         self._last_digest = None
         self._last_signature = None
         self._last_reply = ""
-        self._stats = {"ok": 0, "skip": 0, "fail": 0, "last": 0.0}
+        self._stats = {"ok": 0, "skip": 0, "fail": 0, "full": 0, "last": 0.0}
         self._half = (settings.region_size()[0] // 2, settings.region_size()[1] // 2)
 
         self._set_inputs_enabled(False)
@@ -1033,7 +1051,7 @@ class App(tk.Tk):
 
         half_w, half_h = self._half
         try:
-            capture = capture_cursor(half_w, half_h)
+            capture = capture_scene(half_w, half_h, include_full=self._session.auto_full)
         except RuntimeError as error:
             self._log("error", str(error))
             self._set_status("error", str(error))
@@ -1054,14 +1072,7 @@ class App(tk.Tk):
         client = VisionClient(session.api_key, base_url=session.base_url, model=session.model)
         threading.Thread(
             target=self._ask_worker,
-            args=(
-                self._generation,
-                client,
-                capture.png_base64,
-                capture.image,
-                session.ocr_mode,
-                capture.cursor,
-            ),
+            args=(self._generation, client, capture, session.ocr_mode, session.auto_full),
             daemon=True,
         ).start()
         self._schedule()
@@ -1109,28 +1120,30 @@ class App(tk.Tk):
         self,
         generation: int,
         client: VisionClient,
-        png_base64: str,
-        image: Any,
+        capture: Capture,
         ocr_mode: bool,
-        cursor: tuple[int, int],
+        auto_full: bool,
     ) -> None:
         try:
-            if ocr_mode:
-                result = recognize(image)
-                if not result.lines:
-                    self._events.put(("notice", generation, "截图里没有识别到文字"))
-                    return
-                reply = client.ask_text(compose_prompt(result, cursor))
-            else:
-                reply = client.ask(png_base64)
+            result = answer_scene(
+                client,
+                capture,
+                ocr_mode=ocr_mode,
+                auto_full=auto_full,
+                on_note=lambda message: self._events.put(("note", generation, message)),
+            )
         except ApiError as error:
             self._events.put(("error", generation, error.full_message()))
+        except EmptyScene as error:
+            self._events.put(("notice", generation, str(error)))
         except RuntimeError as error:
             self._events.put(("error", generation, f"图片转文字失败：{error}"))
         except Exception as error:  # noqa: BLE001 - 后台线程不能把异常抛给 Tk
             self._events.put(("error", generation, f"请求异常：{error}"))
         else:
-            self._events.put(("answer", generation, reply.text, reply.latency))
+            self._events.put(
+                ("answer", generation, result.text, result.latency, result.escalated)
+            )
 
     def _stop(self, message: str) -> None:
         if not self._running and not self._inflight:
@@ -1207,7 +1220,7 @@ class App(tk.Tk):
         width, height = REGIONS.get(self._region_key(self.var_region.get()), REGIONS["standard"])
         half_w, half_h = width // 2, height // 2
         try:
-            capture = capture_cursor(half_w, half_h)
+            capture = capture_scene(half_w, half_h, include_full=False)
         except RuntimeError as error:
             self._set_status("error", str(error))
             self._log("error", str(error))
@@ -1269,7 +1282,7 @@ class App(tk.Tk):
             return
         width, height = REGIONS.get(self._region_key(self.var_region.get()), REGIONS["standard"])
         try:
-            capture = capture_cursor(width // 2, height // 2)
+            capture = capture_scene(width // 2, height // 2, include_full=False)
         except RuntimeError as error:
             self._set_status("error", str(error))
             self._log("error", str(error))
@@ -1375,25 +1388,34 @@ class App(tk.Tk):
     def _handle(self, event: tuple[Any, ...]) -> None:
         kind = event[0]
         if kind == "answer":
-            _, generation, text, latency = event
+            _, generation, text, latency, escalated = event
             if generation != self._generation:
                 return
             self._inflight = False
             self._stats["last"] = float(latency)
-            if text.strip().upper() == "SKIP":
+            if is_skip_reply(text):
                 self._stats["skip"] += 1
-                self._log("info", "模型答复 SKIP：鼠标没有指到完整题目")
-                self._set_status("warn", "把鼠标指向完整题目，答案会自动出现")
+                self._log("info", "模型答复 SKIP：鼠标没有指到题干")
+                self._set_status("warn", "把鼠标指向题干，答案会自动出现")
                 return
             self._stats["ok"] += 1
+            if escalated:
+                self._stats["full"] = int(self._stats.get("full", 0)) + 1
             self._set_answer(text)
-            self._log("ok", f"作答完成（{float(latency):.1f}s）：{text[:40]}")
+            suffix = "（已用整屏补全）" if escalated else ""
+            self._log("ok", f"作答完成（{float(latency):.1f}s）{suffix}：{text[:40]}")
             if self._speak(text):
                 # 朗读期间不截图，读完再排下一题
                 self._hold_for_speech()
                 self._log("info", "朗读中：读完这一题的答案再截下一题")
             else:
                 self._set_status("running", "已作答，等待下一次截图")
+        elif kind == "note":
+            _, generation, message = event
+            if generation != self._generation:
+                return
+            self._log("info", message)
+            self._set_status("busy", message)
         elif kind == "error":
             _, generation, message = event
             if generation != self._generation:

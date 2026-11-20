@@ -60,6 +60,7 @@ class Settings:
     speak_rate: int = SPEAK_RATE_DEFAULT
     hide_window: bool = False
     ocr_mode: bool = False
+    auto_full: bool = True
     remember_key: bool = False
     api_key: str = ""
 
@@ -145,6 +146,7 @@ def from_mapping(data: dict[str, object]) -> Settings:
         speak_rate=_coerce_int(data.get("speak_rate"), base.speak_rate),
         hide_window=_coerce_bool(data.get("hide_window"), base.hide_window),
         ocr_mode=_coerce_bool(data.get("ocr_mode"), base.ocr_mode),
+        auto_full=_coerce_bool(data.get("auto_full"), base.auto_full),
         remember_key=_coerce_bool(data.get("remember_key"), base.remember_key),
         api_key=api_key if isinstance(api_key, str) else base.api_key,
     ).with_defaults()

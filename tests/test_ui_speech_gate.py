@@ -74,7 +74,7 @@ class SpeechGateTest(unittest.TestCase):
         return contextlib.suppress(tk.TclError, AttributeError)
 
     def _answer(self, text: str = "答案：A。因为……") -> None:
-        self.app._handle(("answer", self.app._generation, text, 1.2))
+        self.app._handle(("answer", self.app._generation, text, 1.2, False))
 
     def test_answer_holds_next_capture(self) -> None:
         self._answer()
@@ -113,7 +113,7 @@ class SpeechGateTest(unittest.TestCase):
         self.assertIsNotNone(self.app._after_id)
 
     def test_skip_answer_does_not_hold(self) -> None:
-        self.app._handle(("answer", self.app._generation, "SKIP", 0.5))
+        self.app._handle(("answer", self.app._generation, "SKIP", 0.5, False))
         self.assertFalse(self.app._waiting_for_speech)
         self.assertEqual(self.speaker.spoken, [])
 

@@ -10,11 +10,15 @@ from urllib.error import HTTPError, URLError
 
 from cursorqa.client import (
     ANSWER_PROMPT,
+    ANSWER_PROMPT_FULL,
     ApiError,
     VisionClient,
     build_payload,
     describe_http_error,
     extract_reply,
+    is_full_request,
+    is_skip_reply,
+    normalize_images,
     resolve_endpoint,
 )
 
@@ -96,6 +100,60 @@ class PayloadTest(unittest.TestCase):
         parts = payload["messages"][1]["content"]
         self.assertEqual(parts[1]["type"], "image_url")
         self.assertIn("base64", parts[1]["image_url"]["url"])
+
+
+class ImagesTest(unittest.TestCase):
+    def test_normalize(self) -> None:
+        self.assertEqual(normalize_images(None), [])
+        self.assertEqual(normalize_images(""), [])
+        self.assertEqual(normalize_images("AAA"), ["AAA"])
+        self.assertEqual(normalize_images(["A", "", "B"]), ["A", "B"])
+
+    def test_two_images_chat(self) -> None:
+        payload = build_payload("chat", "gpt-4o", "看题", ["A", "B"])
+        parts = payload["messages"][1]["content"]
+        self.assertEqual(len(parts), 3)
+        self.assertEqual(parts[0]["type"], "text")
+        self.assertEqual(parts[1]["type"], "image_url")
+        self.assertEqual(parts[2]["type"], "image_url")
+
+    def test_two_images_responses(self) -> None:
+        payload = build_payload("responses", "deepseek-flash", "看题", ["A", "B"])
+        content = payload["input"][0]["content"]
+        self.assertEqual([item["type"] for item in content], ["input_text", "input_image", "input_image"])
+
+    def test_ask_images_sends_both(self) -> None:
+        captured: dict[str, object] = {}
+
+        def opener(request: object, **_kwargs: object) -> FakeResponse:
+            captured["body"] = json.loads(request.data.decode("utf-8"))  # type: ignore[attr-defined]
+            return FakeResponse({"output_text": "答案：B"})
+
+        client = VisionClient("sk-test", opener=opener)
+        reply = client.ask_images(["AAA", "BBB"], prompt="看整屏")
+        self.assertEqual(reply.text, "答案：B")
+        body = captured["body"]
+        assert isinstance(body, dict)
+        self.assertEqual(len(body["input"][0]["content"]), 3)
+
+    def test_ask_images_requires_images(self) -> None:
+        client = VisionClient("sk-test", opener=lambda *a, **k: FakeResponse({}))
+        with self.assertRaises(ApiError):
+            client.ask_images([])
+
+    def test_full_prompt_mentions_two_images(self) -> None:
+        self.assertIn("第二张图是整屏", ANSWER_PROMPT_FULL)
+        self.assertNotIn("只回复 FULL", ANSWER_PROMPT_FULL)
+
+
+class ReplyMarkersTest(unittest.TestCase):
+    def test_skip(self) -> None:
+        self.assertTrue(is_skip_reply("SKIP"))
+        self.assertFalse(is_skip_reply("答案：A"))
+
+    def test_full(self) -> None:
+        self.assertTrue(is_full_request("FULL"))
+        self.assertFalse(is_full_request("答案：B。"))
 
 
 class ExtractReplyTest(unittest.TestCase):

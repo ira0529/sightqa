@@ -47,6 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"朗读语速（{SPEAK_RATE_MIN}–{SPEAK_RATE_MAX}，0 为正常）",
     )
     parser.add_argument("--ocr", action="store_true", help="图片转文字后再答题（可用纯文本模型）")
+    parser.add_argument(
+        "--no-full",
+        action="store_true",
+        help="题干被截断时不要补发整屏（默认会补发一次）",
+    )
     parser.add_argument("--hide", action="store_true", help="开始运行时隐藏窗口")
     parser.add_argument("--check", action="store_true", help="只测试接口连通性，然后退出")
     parser.add_argument("--config", help=f"配置文件路径，默认 {default_config_path()}")
@@ -73,6 +78,8 @@ def merge_settings(args: argparse.Namespace, base: Settings) -> Settings:
         settings = replace(settings, ocr_mode=True)
     if args.hide:
         settings = replace(settings, hide_window=True)
+    if args.no_full:
+        settings = replace(settings, auto_full=False)
     key = (args.api_key or "").strip() or api_key_from_env()
     if key:
         settings = replace(settings, api_key=key)

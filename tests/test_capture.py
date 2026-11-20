@@ -6,6 +6,7 @@ import os
 import unittest
 
 from cursorqa.capture import (
+    MAX_FULL_WIDTH,
     MIN_EDGE,
     Capture,
     capture_cursor,
@@ -84,6 +85,39 @@ class SignatureTest(unittest.TestCase):
     def test_mismatched_sizes(self) -> None:
         self.assertEqual(signature_distance((1, 2), (1,)), float("inf"))
         self.assertEqual(signature_distance((), ()), float("inf"))
+
+
+class FullImageTest(unittest.TestCase):
+    def _capture(self, with_full: bool = True) -> Capture:
+        from PIL import Image
+
+        return Capture(
+            image=Image.new("RGB", (550, 350), "white"),
+            screen_image=Image.new("RGB", (2000, 1000), "white") if with_full else None,
+            cursor_screen=(1000, 500),
+        )
+
+    def test_full_is_downscaled(self) -> None:
+        image = self._capture().full_image()
+        self.assertEqual(image.width, MAX_FULL_WIDTH)
+        self.assertEqual(image.height, int(1000 * MAX_FULL_WIDTH / 2000))
+
+    def test_cursor_maps_into_full(self) -> None:
+        capture = self._capture()
+        x, y = capture.cursor_in_full()
+        self.assertLess(abs(x - 700), 3)
+        self.assertLess(abs(y - 350), 3)
+
+    def test_full_png_is_png(self) -> None:
+        self.assertTrue(self._capture().full_png_base64().startswith("iVBOR"))
+
+    def test_missing_full_raises(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self._capture(with_full=False).full_image()
+
+    def test_has_full_flag(self) -> None:
+        self.assertTrue(self._capture().has_full)
+        self.assertFalse(self._capture(with_full=False).has_full)
 
 
 class CaptureDataclassTest(unittest.TestCase):

@@ -48,6 +48,8 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.speak_rate, 10)
         self.assertTrue(settings.hide_window)
         self.assertTrue(settings.ocr_mode)
+        self.assertTrue(settings.auto_full, "默认会补发整屏")
+        self.assertFalse(Settings(auto_full=False).with_defaults().auto_full)
         self.assertEqual(Settings(speak_rate=-99).with_defaults().speak_rate, -10)
 
     def test_region_size(self) -> None:
@@ -71,6 +73,7 @@ class MappingTest(unittest.TestCase):
                 "speak_rate": "-4",
                 "hide_window": "on",
                 "ocr_mode": "true",
+                "auto_full": "off",
                 "remember_key": "yes",
                 "api_key": None,
                 "unknown": object(),
@@ -83,6 +86,7 @@ class MappingTest(unittest.TestCase):
         self.assertEqual(settings.speak_rate, -4)
         self.assertTrue(settings.hide_window)
         self.assertTrue(settings.ocr_mode)
+        self.assertFalse(settings.auto_full)
         self.assertTrue(settings.remember_key)
         self.assertEqual(settings.api_key, "")
 
