@@ -1,0 +1,30 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---- 本机私有文件（不随仓库发布）----
+.archive/
+outputs/
+work/
+*.rar
+*.wav
+cursor_qa_status.png
+config.json
+.env
+
+# ---- 编辑器 ----
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

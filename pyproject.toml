@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sightqa"
+version = "1.2.0"
+description = "鼠标指题答疑：光标取景 → 多模态模型 / 本地 OCR → 本地朗读（Windows）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ira" }]
+keywords = ["ocr", "vision", "tkinter", "windows", "sapi", "screenshot", "qa"]
+dependencies = ["Pillow>=10.0"]
+classifiers = [
+  "Environment :: Win32 (MS Windows)",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Education",
+  "Topic :: Multimedia :: Graphics :: Capture :: Screen Capture",
+]
+
+[project.scripts]
+sightqa = "cursorqa.cli:main"
+
+[tool.setuptools]
+packages = ["cursorqa"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [".archive", "outputs", "work", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.unittest]
+start-directory = "tests"
